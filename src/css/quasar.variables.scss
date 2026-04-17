@@ -1,0 +1,72 @@
+// Quasar Sass Variables - Apple Design System
+// --------------------------------------------------
+// Based on design.txt Apple Design System specifications
+
+// Primary Colors
+$primary: #0071e3; // Apple Blue - primary CTA
+$secondary: #2997ff; // Bright Blue - links on dark bg
+$accent: #e8b339; // Apple accent (kept for compatibility)
+
+// Dark Theme
+$dark: #1d1d1f; // Near Black
+$dark-page: #000000; // Pure Black
+
+// Status Colors
+$positive: #21ba45;
+$negative: #c10015;
+$info: #31ccec;
+$warning: #f2c037;
+
+// Light theme specific
+$light: #f5f5f7;
+$light-page: #f5f5f7;
+
+// Typography
+$typography-font-family:
+  'SF Pro Text',
+  -apple-system,
+  BlinkMacSystemFont,
+  'Helvetica Neue',
+  Helvetica,
+  Arial,
+  sans-serif;
+$h1: (
+  size: 3.5rem,
+  line-height: 1.07,
+  letter-spacing: -0.28px,
+  weight: 600,
+);
+$h2: (
+  size: 2.5rem,
+  line-height: 1.1,
+  letter-spacing: normal,
+  weight: 600,
+);
+$h3: (
+  size: 1.75rem,
+  line-height: 1.14,
+  letter-spacing: 0.196px,
+  weight: 400,
+);
+$h4: (
+  size: 1.31rem,
+  line-height: 1.19,
+  letter-spacing: 0.231px,
+  weight: 700,
+);
+$h5: (
+  size: 1.06rem,
+  line-height: 1.47,
+  letter-spacing: -0.374px,
+  weight: 400,
+);
+$h6: (
+  size: 0.88rem,
+  line-height: 1.43,
+  letter-spacing: -0.224px,
+  weight: 400,
+);
+
+// Border Radius
+$button-border-radius: 8px;
+$generic-border-radius: 12px;
