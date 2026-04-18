@@ -164,6 +164,7 @@
                     map-options
                     placeholder="选择提示词套件"
                     style="min-width: 160px"
+                    @blur="onPropPromptThemeBlur(prop.id, prop.promptThemeId)"
                   >
                     <template #prepend>
                       <q-icon name="description" size="xs" />
@@ -228,6 +229,7 @@
               label="道具名称"
               dense
               :rules="[(val) => !!val || '请输入道具名称']"
+              @blur="onPropFieldBlur"
             />
             <q-input
               v-model="propForm.description"
@@ -236,6 +238,7 @@
               type="textarea"
               rows="4"
               dense
+              @blur="onPropFieldBlur"
             />
           </div>
         </q-card-section>
@@ -263,7 +266,7 @@ import { useQuasar } from 'quasar';
 import { useRoute } from 'vue-router';
 import { useWorkspaceStore } from 'src/stores/workspace-store';
 import { useSettingsStore } from 'src/stores/settings-store';
-import { useAutoSave } from 'src/composables/use-auto-save';
+import { useDebounceFn } from 'src/composables/use-field-auto-save';
 import { getElectronApi } from 'src/services/native-fs';
 import { toLocalFileUrl } from 'src/composables/use-local-file-url';
 import { ensureGlobalLibraryDir } from 'src/services/library-paths';
@@ -321,16 +324,20 @@ const propForm = ref({
   description: '',
 });
 
+// 跟踪表单是否有修改
+const propFormDirty = ref(false);
+
 function showAddPropDialog() {
   editingPropId.value = null;
   propForm.value = {
     name: '',
     description: '',
   };
+  propFormDirty.value = false;
   showPropDialog.value = true;
 }
 
-function editProp(propId: string) {
+async function editProp(propId: string) {
   const prop = props.value.find((p) => p.id === propId);
   if (!prop) return;
 
@@ -339,7 +346,66 @@ function editProp(propId: string) {
     name: prop.name,
     description: prop.description,
   };
+  propFormDirty.value = false;
   showPropDialog.value = true;
+}
+
+function markPropDirty() {
+  propFormDirty.value = true;
+}
+
+// 离开输入框时自动保存
+const debouncedPropSave = useDebounceFn(() => {
+  void autoSaveProp();
+}, 300);
+
+async function onPropFieldBlur() {
+  markPropDirty();
+  if (!propFormDirty.value) return;
+
+  // 如果是新建道具（没有 editingPropId），先创建道具
+  if (!editingPropId.value) {
+    if (!propForm.value.name.trim()) return;
+    try {
+      const newProp = await workspace.addProp({
+        name: propForm.value.name,
+        description: propForm.value.description,
+      });
+      if (newProp) {
+        editingPropId.value = newProp.id;
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      $q.notify({ type: 'negative', timeout: 1000, message: `创建道具失败: ${msg}` });
+      return;
+    }
+  }
+
+  debouncedPropSave();
+}
+
+async function autoSaveProp() {
+  if (!editingPropId.value) return;
+  try {
+    await workspace.updateProp(editingPropId.value, {
+      name: propForm.value.name,
+      description: propForm.value.description,
+    });
+    propFormDirty.value = false;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    $q.notify({ type: 'negative', timeout: 1000, message: `保存失败: ${msg}` });
+  }
+}
+
+async function onPropPromptThemeBlur(propId: string, promptThemeId: string | undefined) {
+  if (!workspace.projectId) return;
+  try {
+    await workspace.updateProp(propId, promptThemeId !== undefined ? { promptThemeId } : {});
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    $q.notify({ type: 'negative', timeout: 1000, message: `保存失败: ${msg}` });
+  }
 }
 
 async function saveProp() {

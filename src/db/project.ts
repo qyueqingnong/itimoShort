@@ -221,7 +221,30 @@ export async function loadEpisodeManifestFromPath(
   const projectId = extractProjectIdFromPath(projectRoot);
   const episodeId = `${projectId}_${episodeFolder}`;
   const result = await loadEpisodeManifest(episodeId);
+
+  // 分集记录不存在时，从项目 manifest 中的 episodeRef 重建分集数据
   if (!result) {
+    try {
+      const manifest = await loadProjectManifestById(projectId);
+      if (manifest) {
+        const episodeRef = manifest.episodes.find((ep) => ep.folder === episodeFolder);
+        if (episodeRef) {
+          const fallbackEpisode: EpisodeManifest = {
+            id: episodeRef.id,
+            projectId,
+            version: EPISODE_MANIFEST_VERSION,
+            title: episodeRef.title,
+            order: episodeRef.order,
+            script: [{ id: crypto.randomUUID(), heading: '第一场', body: '' }],
+            updatedAt: episodeRef.updatedAt,
+          };
+          await saveEpisodeManifest(episodeId, fallbackEpisode);
+          return fallbackEpisode;
+        }
+      }
+    } catch {
+      // ignore errors during fallback
+    }
     throw new Error(`分集数据不存在: ${projectRoot}/episodes/${episodeFolder}`);
   }
   return result;
@@ -471,8 +494,10 @@ export async function createProjectOnDisk(input: CreateProjectInput): Promise<Pr
   await api.fsEnsureDir(projectRoot);
 
   const episodeFolder = 'ep-001';
+  // 数据库主键使用 projectId_folder 格式，与 loadEpisodeManifestFromPath 保持一致
+  const episodeId = `${id}_${episodeFolder}`;
   const episodeRef: EpisodeRef = {
-    id: crypto.randomUUID(),
+    id: episodeId,
     title: '第 1 集',
     episodeNumber: '001',
     order: 1,
@@ -502,7 +527,7 @@ export async function createProjectOnDisk(input: CreateProjectInput): Promise<Pr
   if (input.coverImage !== undefined) manifest.coverImage = input.coverImage;
 
   const episode: EpisodeManifest = {
-    id: episodeRef.id,
+    id: episodeId,
     projectId: id,
     version: EPISODE_MANIFEST_VERSION,
     title: episodeRef.title,
@@ -520,6 +545,12 @@ export async function createProjectOnDisk(input: CreateProjectInput): Promise<Pr
 
   await saveProjectManifest(projectRoot, manifest);
   await saveEpisodeManifestFromPath(projectRoot, episodeFolder, episode);
+
+  // 验证分集数据已正确保存
+  const verify = await loadEpisodeManifest(episodeId);
+  if (!verify) {
+    throw new Error('分集数据保存失败，请重试');
+  }
 
   const entry: ProjectsIndexEntry = {
     id,

@@ -914,8 +914,10 @@ async function addEpisode() {
     const episodeFolderPath = await api.pathJoin(workspace.rootPath, 'episodes', episodeFolder);
     await api.fsEnsureDir(episodeFolderPath);
 
+    // 数据库主键使用 projectId_folder 格式，与 loadEpisodeManifestFromPath 保持一致
+    const episodeId = `${workspace.manifest.id}_${episodeFolder}`;
     const episodeManifest: EpisodeManifest = {
-      id: `ep_${Date.now()}`,
+      id: episodeId,
       projectId: workspace.manifest.id,
       version: 1,
       title: '默认标题',
@@ -989,6 +991,10 @@ function deleteEpisode(episodeId: string) {
         if (await api.fsExists(episodeFolderPath)) {
           await api.fsRemove(episodeFolderPath, { recursive: true });
         }
+
+        // 从数据库删除分集数据
+        const { deleteEpisode: deleteEpisodeFromDb } = await import('src/db/project');
+        await deleteEpisodeFromDb(episodeToDelete.id);
 
         const updatedEpisodes = episodes.filter((ep) => ep.id !== episodeId);
         workspace.patchManifest({

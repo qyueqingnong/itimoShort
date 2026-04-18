@@ -164,6 +164,7 @@
                     map-options
                     placeholder="选择提示词套件"
                     style="min-width: 160px"
+                    @blur="onScenePromptThemeBlur(scene.id, scene.promptThemeId)"
                   >
                     <template #prepend>
                       <q-icon name="description" size="xs" />
@@ -228,6 +229,7 @@
               label="场景名称"
               dense
               :rules="[(val) => !!val || '请输入场景名称']"
+              @blur="onSceneFieldBlur"
             />
             <q-input
               v-model="sceneForm.description"
@@ -236,6 +238,7 @@
               type="textarea"
               rows="4"
               dense
+              @blur="onSceneFieldBlur"
             />
           </div>
         </q-card-section>
@@ -263,7 +266,7 @@ import { useQuasar } from 'quasar';
 import { useRoute } from 'vue-router';
 import { useWorkspaceStore } from 'src/stores/workspace-store';
 import { useSettingsStore } from 'src/stores/settings-store';
-import { useAutoSave } from 'src/composables/use-auto-save';
+import { useDebounceFn } from 'src/composables/use-field-auto-save';
 import { getElectronApi } from 'src/services/native-fs';
 import { toLocalFileUrl } from 'src/composables/use-local-file-url';
 import { ensureGlobalLibraryDir } from 'src/services/library-paths';
@@ -321,16 +324,20 @@ const sceneForm = ref({
   description: '',
 });
 
+// 跟踪表单是否有修改
+const sceneFormDirty = ref(false);
+
 function showAddSceneDialog() {
   editingSceneId.value = null;
   sceneForm.value = {
     name: '',
     description: '',
   };
+  sceneFormDirty.value = false;
   showSceneDialog.value = true;
 }
 
-function editScene(sceneId: string) {
+async function editScene(sceneId: string) {
   const scene = scenes.value.find((s) => s.id === sceneId);
   if (!scene) return;
 
@@ -339,7 +346,66 @@ function editScene(sceneId: string) {
     name: scene.name,
     description: scene.description,
   };
+  sceneFormDirty.value = false;
   showSceneDialog.value = true;
+}
+
+function markSceneDirty() {
+  sceneFormDirty.value = true;
+}
+
+// 离开输入框时自动保存
+const debouncedSceneSave = useDebounceFn(() => {
+  void autoSaveScene();
+}, 300);
+
+async function onSceneFieldBlur() {
+  markSceneDirty();
+  if (!sceneFormDirty.value) return;
+
+  // 如果是新建场景（没有 editingSceneId），先创建场景
+  if (!editingSceneId.value) {
+    if (!sceneForm.value.name.trim()) return;
+    try {
+      const newScene = await workspace.addScene({
+        name: sceneForm.value.name,
+        description: sceneForm.value.description,
+      });
+      if (newScene) {
+        editingSceneId.value = newScene.id;
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      $q.notify({ type: 'negative', timeout: 1000, message: `创建场景失败: ${msg}` });
+      return;
+    }
+  }
+
+  debouncedSceneSave();
+}
+
+async function autoSaveScene() {
+  if (!editingSceneId.value) return;
+  try {
+    await workspace.updateScene(editingSceneId.value, {
+      name: sceneForm.value.name,
+      description: sceneForm.value.description,
+    });
+    sceneFormDirty.value = false;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    $q.notify({ type: 'negative', timeout: 1000, message: `保存失败: ${msg}` });
+  }
+}
+
+async function onScenePromptThemeBlur(sceneId: string, promptThemeId: string | undefined) {
+  if (!workspace.projectId) return;
+  try {
+    await workspace.updateScene(sceneId, promptThemeId !== undefined ? { promptThemeId } : {});
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    $q.notify({ type: 'negative', timeout: 1000, message: `保存失败: ${msg}` });
+  }
 }
 
 async function saveScene() {

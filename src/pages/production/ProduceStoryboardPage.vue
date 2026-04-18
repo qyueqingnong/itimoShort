@@ -636,8 +636,9 @@ import { useRoute } from 'vue-router';
 import { useQuasar } from 'quasar';
 import { useWorkspaceStore } from 'src/stores/workspace-store';
 import { useSettingsStore } from 'src/stores/settings-store';
-import { useAutoSave } from 'src/composables/use-auto-save';
-import { loadEpisodeManifestFromPath, saveEpisodeManifestFromPath } from 'src/db/project';
+import { useDebounceFn } from 'src/composables/use-field-auto-save';
+import { loadEpisodeManifest, saveEpisodeManifest } from 'src/db/project';
+import type { EpisodeManifest } from 'src/core/types';
 import { generateText, generateImage as generateImageApi } from 'src/services/ai';
 import {
   getPromptThemeOptions,
@@ -816,20 +817,36 @@ onMounted(async () => {
   await loadStoryboardData();
 });
 
-// 自动保存
-useAutoSave(async () => {
-  await saveStoryboardData(true);
-});
+// 自动保存功能 - 基于 blur 事件，离开输入框时自动保存
+const storyboardDirty = ref(false);
+
+function markStoryboardDirty() {
+  storyboardDirty.value = true;
+}
+
+const debouncedSaveStoryboard = useDebounceFn(() => {
+  if (!storyboardDirty.value) return;
+  void autoSaveStoryboard();
+}, 300);
+
+function onStoryboardInputBlur() {
+  markStoryboardDirty();
+  debouncedSaveStoryboard();
+}
+
+async function autoSaveStoryboard() {
+  try {
+    await saveStoryboardData(true);
+    storyboardDirty.value = false;
+  } catch (e) {
+    console.error('Auto save storyboard failed:', e);
+  }
+}
 
 async function loadStoryboardData() {
-  if (!workspace.rootPath) return;
-
   try {
-    const episodes = workspace.manifest?.episodes ?? [];
-    const episode = episodes.find((ep) => ep.id === episodeId.value);
-    if (!episode) return;
-
-    const episodeManifest = await loadEpisodeManifestFromPath(workspace.rootPath, episode.folder);
+    const episodeManifest = await loadEpisodeManifest(episodeId.value);
+    if (!episodeManifest) return;
 
     // 从剧本获取剧本内容
     if (episodeManifest.script && episodeManifest.script.length > 0) {
@@ -844,16 +861,11 @@ async function loadStoryboardData() {
 }
 
 async function saveStoryboardData(silent = false) {
-  if (!workspace.rootPath) return;
-
   try {
-    const episodes = workspace.manifest?.episodes ?? [];
-    const episode = episodes.find((ep) => ep.id === episodeId.value);
-    if (!episode) return;
-
-    const episodeManifest = await loadEpisodeManifestFromPath(workspace.rootPath, episode.folder);
+    const episodeManifest = await loadEpisodeManifest(episodeId.value);
+    if (!episodeManifest) return;
     // TODO: 保存分镜数据到 episodeManifest
-    await saveEpisodeManifestFromPath(workspace.rootPath, episode.folder, episodeManifest);
+    await saveEpisodeManifest(episodeId.value, episodeManifest);
   } catch (e) {
     if (!silent) {
       const msg = e instanceof Error ? e.message : String(e);

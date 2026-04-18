@@ -132,6 +132,7 @@
             placeholder="大明永乐二年。"
             class="itimo-story-textarea"
             :rows="6"
+            @blur="onStoryInputBlur"
           />
         </div>
       </div>
@@ -144,8 +145,9 @@ import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { useQuasar } from 'quasar';
 import { useWorkspaceStore } from 'src/stores/workspace-store';
-import { useAutoSave } from 'src/composables/use-auto-save';
-import { loadEpisodeManifestFromPath, saveEpisodeManifestFromPath } from 'src/db/project';
+import { useDebounceFn } from 'src/composables/use-field-auto-save';
+import { loadEpisodeManifest, saveEpisodeManifest, updateEpisodeTitle } from 'src/db/project';
+import type { EpisodeManifest } from 'src/core/types';
 import { getElectronApi } from 'src/services/native-fs';
 import { labelMaterialType, labelArtStyle, labelMoodAtmosphere } from 'src/constants/drama-options';
 import { generateText } from 'src/services/ai';
@@ -211,28 +213,37 @@ onMounted(async () => {
   await loadStoryData();
 });
 
-// 自动保存功能
-useAutoSave(async () => {
-  // 保存标题（如果标题有变化）
-  if (editingTitle.value !== episodeTitle.value) {
-    await saveTitle(true);
+// 自动保存功能 - 基于 blur 事件，离开输入框时自动保存
+const storyDirty = ref(false);
+
+function markStoryDirty() {
+  storyDirty.value = true;
+}
+
+// 故事主输入框 blur 时自动保存
+const debouncedSaveStory = useDebounceFn(() => {
+  if (!storyDirty.value) return;
+  void autoSaveStory();
+}, 300);
+
+function onStoryInputBlur() {
+  markStoryDirty();
+  debouncedSaveStory();
+}
+
+async function autoSaveStory() {
+  try {
+    await saveStoryData(true);
+    storyDirty.value = false;
+  } catch (e) {
+    console.error('Auto save story failed:', e);
   }
-  // 保存故事梗概（静默保存）
-  await saveStoryData(true);
-});
+}
 
 async function loadStoryData() {
-  if (!workspace.rootPath) return;
-
   try {
-    const episodes = workspace.manifest?.episodes ?? [];
-    const episode = episodes.find((ep) => ep.id === episodeId.value);
-    if (!episode) return;
-
-    const api = getElectronApi();
-    if (!api) return;
-
-    const episodeManifest = await loadEpisodeManifestFromPath(workspace.rootPath, episode.folder);
+    const episodeManifest = await loadEpisodeManifest(episodeId.value);
+    if (!episodeManifest) return;
 
     // 加载故事梗概（从第一个 script block 的 heading）
     if (episodeManifest.script && episodeManifest.script.length > 0) {
@@ -251,17 +262,9 @@ async function loadStoryData() {
 }
 
 async function saveStoryData(silent = false) {
-  if (!workspace.rootPath) return;
-
   try {
-    const episodes = workspace.manifest?.episodes ?? [];
-    const episode = episodes.find((ep) => ep.id === episodeId.value);
-    if (!episode) return;
-
-    const api = getElectronApi();
-    if (!api) return;
-
-    const episodeManifest = await loadEpisodeManifestFromPath(workspace.rootPath, episode.folder);
+    const episodeManifest = await loadEpisodeManifest(episodeId.value);
+    if (!episodeManifest) return;
 
     // 保存故事梗概到第一个 script block 的 heading
     if (!episodeManifest.script || episodeManifest.script.length === 0) {
@@ -280,7 +283,7 @@ async function saveStoryData(silent = false) {
     episodeManifest.aiInputText = aiInputText.value;
     episodeManifest.aiPromptThemeId = selectedPromptTheme.value;
 
-    await saveEpisodeManifestFromPath(workspace.rootPath, episode.folder, episodeManifest);
+    await saveEpisodeManifest(episodeId.value, episodeManifest);
 
     if (!silent) {
       $q.notify({

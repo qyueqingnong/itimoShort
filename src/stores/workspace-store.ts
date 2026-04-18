@@ -103,13 +103,17 @@ export const useWorkspaceStore = defineStore('workspace', {
 
     // ── 场景操作 ────────────────────────────────────────
 
-    async addScene(scene: Omit<Scene, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>) {
+    async addScene(scene: { name: string; description: string; imagePath?: string; promptLangEn?: boolean; promptThemeId?: string }) {
       if (!this.projectId) return null;
 
       const newScene: Scene = {
-        ...scene,
         id: crypto.randomUUID(),
         projectId: this.projectId,
+        name: scene.name,
+        description: scene.description,
+        imagePath: scene.imagePath,
+        promptLangEn: scene.promptLangEn,
+        promptThemeId: scene.promptThemeId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -126,14 +130,17 @@ export const useWorkspaceStore = defineStore('workspace', {
       if (index === -1) return;
 
       const existing = this.scenes[index]!;
+      const updatesScene: Partial<Scene> = {};
+      if (updates.name !== undefined) updatesScene.name = updates.name;
+      if (updates.description !== undefined) updatesScene.description = updates.description;
+      if (updates.imagePath !== undefined) updatesScene.imagePath = updates.imagePath;
+      if (updates.promptLangEn !== undefined) updatesScene.promptLangEn = updates.promptLangEn;
+      if (updates.promptThemeId !== undefined) updatesScene.promptThemeId = updates.promptThemeId;
+
       this.scenes[index] = {
-        id: existing.id,
-        name: updates.name ?? existing.name,
-        description: updates.description ?? existing.description,
+        ...existing,
+        ...updatesScene,
         projectId: this.projectId ?? existing.projectId,
-        imagePath: updates.imagePath,
-        promptLangEn: updates.promptLangEn,
-        promptThemeId: updates.promptThemeId,
         createdAt: existing.createdAt,
         updatedAt: new Date().toISOString(),
       };
@@ -150,13 +157,17 @@ export const useWorkspaceStore = defineStore('workspace', {
 
     // ── 道具操作 ────────────────────────────────────────
 
-    async addProp(prop: Omit<Prop, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>) {
+    async addProp(prop: { name: string; description: string; imagePath?: string; promptLangEn?: boolean; promptThemeId?: string }) {
       if (!this.projectId) return null;
 
       const newProp: Prop = {
-        ...prop,
         id: crypto.randomUUID(),
         projectId: this.projectId,
+        name: prop.name,
+        description: prop.description,
+        imagePath: prop.imagePath,
+        promptLangEn: prop.promptLangEn,
+        promptThemeId: prop.promptThemeId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -173,14 +184,17 @@ export const useWorkspaceStore = defineStore('workspace', {
       if (index === -1) return;
 
       const existing = this.props[index]!;
+      const updatesProp: Partial<Prop> = {};
+      if (updates.name !== undefined) updatesProp.name = updates.name;
+      if (updates.description !== undefined) updatesProp.description = updates.description;
+      if (updates.imagePath !== undefined) updatesProp.imagePath = updates.imagePath;
+      if (updates.promptLangEn !== undefined) updatesProp.promptLangEn = updates.promptLangEn;
+      if (updates.promptThemeId !== undefined) updatesProp.promptThemeId = updates.promptThemeId;
+
       this.props[index] = {
-        id: existing.id,
-        name: updates.name ?? existing.name,
-        description: updates.description ?? existing.description,
+        ...existing,
+        ...updatesProp,
         projectId: this.projectId ?? existing.projectId,
-        imagePath: updates.imagePath,
-        promptLangEn: updates.promptLangEn,
-        promptThemeId: updates.promptThemeId,
         createdAt: existing.createdAt,
         updatedAt: new Date().toISOString(),
       };

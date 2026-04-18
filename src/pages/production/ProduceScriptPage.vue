@@ -197,6 +197,7 @@
             placeholder="点击上方【生成剧本】按钮，AI 将根据故事梗概、角色信息和情绪看点生成剧本内容..."
             class="itimo-script-editor"
             :rows="20"
+            @blur="onScriptInputBlur"
           />
         </div>
         <div class="itimo-card-footer">
@@ -215,12 +216,12 @@ import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import { useWorkspaceStore } from 'src/stores/workspace-store';
 import { useSettingsStore } from 'src/stores/settings-store';
-import { useAutoSave } from 'src/composables/use-auto-save';
-import { loadEpisodeManifestFromPath, saveEpisodeManifestFromPath } from 'src/db/project';
-import { getElectronApi } from 'src/services/native-fs';
+import { useDebounceFn } from 'src/composables/use-field-auto-save';
+import { loadEpisodeManifest, saveEpisodeManifest, updateEpisodeTitle } from 'src/db/project';
 import { labelMaterialType, labelArtStyle, labelMoodAtmosphere } from 'src/constants/drama-options';
 import { generateText } from 'src/services/ai';
 import type { Character } from 'src/core/types/project';
+import type { EpisodeManifest } from 'src/core/types';
 
 // Import character avatar images
 import heroineAvatar from 'src/assets/character/heroine.png';
@@ -299,28 +300,53 @@ onMounted(async () => {
   await loadScriptData();
 });
 
-// 自动保存功能
-useAutoSave(async () => {
-  // 保存选中的角色（静默保存）
-  if (selectedCharacterIds.value.length > 0) {
-    await saveSelectedCharacters(true);
+// 自动保存功能 - 基于 blur 事件，离开输入框时自动保存
+const scriptDirty = ref(false);
+const charactersDirty = ref(false);
+
+function markScriptDirty() {
+  scriptDirty.value = true;
+}
+
+function markCharactersDirty() {
+  charactersDirty.value = true;
+}
+
+// 剧本输入框 blur 时自动保存
+const debouncedSaveScript = useDebounceFn(() => {
+  if (!scriptDirty.value) return;
+  void autoSaveScript();
+}, 300);
+
+function onScriptInputBlur() {
+  markScriptDirty();
+  debouncedSaveScript();
+}
+
+async function autoSaveScript() {
+  try {
+    await saveScriptData(true);
+    scriptDirty.value = false;
+  } catch (e) {
+    console.error('Auto save script failed:', e);
   }
-  // 保存剧本（静默保存）
-  await saveScriptData(true);
-});
+}
+
+// 角色选择变化时自动保存
+async function onCharacterSelectionChange() {
+  markCharactersDirty();
+  try {
+    await saveSelectedCharacters(true);
+    charactersDirty.value = false;
+  } catch (e) {
+    console.error('Auto save character selection failed:', e);
+  }
+}
 
 async function loadSelectedCharacters() {
-  if (!workspace.rootPath) return;
-
   try {
-    const episodes = workspace.manifest?.episodes ?? [];
-    const episode = episodes.find((ep) => ep.id === episodeId.value);
-    if (!episode) return;
-
-    const api = getElectronApi();
-    if (!api) return;
-
-    const episodeManifest = await loadEpisodeManifestFromPath(workspace.rootPath, episode.folder);
+    const episodeManifest = await loadEpisodeManifest(episodeId.value);
+    if (!episodeManifest) return;
     selectedCharacterIds.value = episodeManifest.selectedCharacterIds ?? [];
   } catch (e) {
     console.error('Failed to load selected characters:', e);
@@ -328,17 +354,9 @@ async function loadSelectedCharacters() {
 }
 
 async function loadScriptData() {
-  if (!workspace.rootPath) return;
-
   try {
-    const episodes = workspace.manifest?.episodes ?? [];
-    const episode = episodes.find((ep) => ep.id === episodeId.value);
-    if (!episode) return;
-
-    const api = getElectronApi();
-    if (!api) return;
-
-    const episodeManifest = await loadEpisodeManifestFromPath(workspace.rootPath, episode.folder);
+    const episodeManifest = await loadEpisodeManifest(episodeId.value);
+    if (!episodeManifest) return;
 
     // 加载故事梗概和剧本（从第一个 script block）
     if (episodeManifest.script && episodeManifest.script.length > 0) {
@@ -354,17 +372,9 @@ async function loadScriptData() {
 }
 
 async function saveScriptData(silent = false) {
-  if (!workspace.rootPath) return;
-
   try {
-    const episodes = workspace.manifest?.episodes ?? [];
-    const episode = episodes.find((ep) => ep.id === episodeId.value);
-    if (!episode) return;
-
-    const api = getElectronApi();
-    if (!api) return;
-
-    const episodeManifest = await loadEpisodeManifestFromPath(workspace.rootPath, episode.folder);
+    const episodeManifest = await loadEpisodeManifest(episodeId.value);
+    if (!episodeManifest) return;
 
     // 确保 script 字段存在
     if (!episodeManifest.script) {
@@ -384,7 +394,7 @@ async function saveScriptData(silent = false) {
       episodeManifest.script[0].body = scriptContent.value;
     }
 
-    await saveEpisodeManifestFromPath(workspace.rootPath, episode.folder, episodeManifest);
+    await saveEpisodeManifest(episodeId.value, episodeManifest);
 
     if (!silent) {
       $q.notify({
@@ -502,28 +512,21 @@ function toggleCharacterSelection(characterId: string) {
   } else {
     selectedCharacterIds.value.push(characterId);
   }
-  void saveSelectedCharacters();
+  void onCharacterSelectionChange();
 }
 
 function clearSelection() {
   selectedCharacterIds.value = [];
-  void saveSelectedCharacters();
+  void onCharacterSelectionChange();
 }
 
 async function saveSelectedCharacters(silent = false) {
-  if (!workspace.rootPath) return;
-
   try {
-    const episodes = workspace.manifest?.episodes ?? [];
-    const episode = episodes.find((ep) => ep.id === episodeId.value);
-    if (!episode) return;
+    const episodeManifest = await loadEpisodeManifest(episodeId.value);
+    if (!episodeManifest) return;
 
-    const api = getElectronApi();
-    if (!api) return;
-
-    const episodeManifest = await loadEpisodeManifestFromPath(workspace.rootPath, episode.folder);
     episodeManifest.selectedCharacterIds = selectedCharacterIds.value;
-    await saveEpisodeManifestFromPath(workspace.rootPath, episode.folder, episodeManifest);
+    await saveEpisodeManifest(episodeId.value, episodeManifest);
 
     if (!silent) {
       $q.notify({

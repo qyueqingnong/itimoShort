@@ -163,6 +163,7 @@
                     map-options
                     placeholder="选择提示词套件"
                     style="min-width: 160px"
+                    @blur="onPromptThemeBlur(character.id, character.promptThemeId)"
                   >
                     <template #prepend>
                       <q-icon name="description" size="xs" />
@@ -325,9 +326,10 @@ function editCharacter(character?: Character) {
     component: CharacterDialog,
     componentProps: {
       character,
+      onAutoSave: async (characterData: Character) => {
+        await saveCharacter(characterData, false);
+      },
     },
-  }).onOk((characterData: Character) => {
-    void saveCharacter(characterData);
   });
 }
 
@@ -336,13 +338,26 @@ function openCharacterDialog(character?: Character) {
     component: CharacterDialog,
     componentProps: {
       character,
+      onAutoSave: async (characterData: Character) => {
+        await saveCharacter(characterData, false);
+      },
     },
   }).onOk((characterData: Character) => {
     void saveCharacter(characterData);
   });
 }
 
-async function saveCharacter(characterData: Character) {
+async function onPromptThemeBlur(characterId: string, promptThemeId: string | undefined) {
+  if (!workspace.projectId) return;
+  try {
+    await workspace.updateCharacter(characterId, { promptThemeId });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    $q.notify({ type: 'negative', timeout: 1000, message: `保存失败: ${msg}` });
+  }
+}
+
+async function saveCharacter(characterData: Character, showNotification = true) {
   if (!workspace.projectId) return;
 
   try {
@@ -357,11 +372,13 @@ async function saveCharacter(characterData: Character) {
       }
     }
 
-    $q.notify({
-      type: 'positive',
-      timeout: 1000,
-      message: existingIndex >= 0 ? '角色已更新' : '角色已添加',
-    });
+    if (showNotification) {
+      $q.notify({
+        type: 'positive',
+        timeout: 1000,
+        message: existingIndex >= 0 ? '角色已更新' : '角色已添加',
+      });
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     $q.notify({ type: 'negative', timeout: 1000, message: `保存角色失败: ${msg}` });

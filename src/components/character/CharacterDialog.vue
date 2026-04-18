@@ -26,6 +26,7 @@
                   (val) => !!val || '请输入姓名',
                   (val) => (val.length >= 1 && val.length <= 10) || '姓名长度为1-10个字符',
                 ]"
+                @blur="markDirty(); onFieldBlur()"
               />
             </div>
             <div class="col-6">
@@ -36,6 +37,7 @@
                 outlined
                 dense
                 :rules="[(val) => !!val || '请选择角色定位']"
+                @blur="markDirty(); onFieldBlur()"
               />
             </div>
           </div>
@@ -49,6 +51,7 @@
                 label="性别"
                 outlined
                 dense
+                @blur="markDirty(); onFieldBlur()"
               />
             </div>
             <div class="col-6">
@@ -63,6 +66,7 @@
                   (val) =>
                     val === '' || val === null || (val >= 1 && val <= 120) || '年龄范围为1-120岁',
                 ]"
+                @blur="markDirty(); onFieldBlur()"
               />
             </div>
           </div>
@@ -81,6 +85,7 @@
                   (val) =>
                     val === '' || val === null || (val >= 50 && val <= 250) || '请输入合理的身高',
                 ]"
+                @blur="markDirty(); onFieldBlur()"
               />
             </div>
             <div class="col-6">
@@ -95,6 +100,7 @@
                   (val) =>
                     val === '' || val === null || (val >= 20 && val <= 300) || '请输入合理的体重',
                 ]"
+                @blur="markDirty(); onFieldBlur()"
               />
             </div>
           </div>
@@ -108,6 +114,7 @@
                 outlined
                 dense
                 placeholder="例如：学生、医生、警察"
+                @blur="markDirty(); onFieldBlur()"
               />
             </div>
           </div>
@@ -121,6 +128,7 @@
                 outlined
                 dense
                 placeholder="例如：匀称、健壮、纤细"
+                @blur="markDirty(); onFieldBlur()"
               />
             </div>
           </div>
@@ -136,6 +144,7 @@
                 type="textarea"
                 :rows="2"
                 placeholder="描述面部特征，如：五官精致、浓眉大眼等"
+                @blur="markDirty(); onFieldBlur()"
               />
             </div>
           </div>
@@ -151,6 +160,7 @@
                 type="textarea"
                 :rows="2"
                 placeholder="描述常见服饰风格，如：休闲装、正装、古装等"
+                @blur="markDirty(); onFieldBlur()"
               />
             </div>
           </div>
@@ -166,6 +176,7 @@
                 type="textarea"
                 :rows="2"
                 placeholder="例如：开朗活泼、沉稳内敛"
+                @blur="markDirty(); onFieldBlur()"
               />
             </div>
           </div>
@@ -181,6 +192,7 @@
                 type="textarea"
                 :rows="2"
                 placeholder="例如：语速较快、用词文雅"
+                @blur="markDirty(); onFieldBlur()"
               />
             </div>
           </div>
@@ -196,6 +208,7 @@
                 type="textarea"
                 :rows="2"
                 placeholder="例如：喜欢阅读、擅长绘画"
+                @blur="markDirty(); onFieldBlur()"
               />
             </div>
           </div>
@@ -216,9 +229,12 @@
 import { ref } from 'vue';
 import { useDialogPluginComponent } from 'quasar';
 import type { Character } from 'src/core/types/project';
+import { useDebounceFn } from 'src/composables/use-field-auto-save';
 
 interface Props {
   character?: Character;
+  /** 保存回调函数，接收更新后的角色数据 */
+  onAutoSave?: (data: Character) => Promise<void> | void;
 }
 
 const props = defineProps<Props>();
@@ -231,6 +247,22 @@ const isEdit = !!props.character;
 
 const roleOptions = ['主角', '配角', '次要角色'];
 const genderOptions = ['男', '女'];
+
+// 跟踪是否有未保存的修改
+const hasUnsavedChanges = ref(false);
+
+// 对话框关闭前如果有未保存的修改，先自动保存
+function handleDialogClose() {
+  if (hasUnsavedChanges.value && props.onAutoSave) {
+    const characterData = buildCharacterData();
+    void props.onAutoSave(characterData);
+  }
+}
+
+// 监听表单数据变化，标记为有未保存的修改
+function markDirty() {
+  hasUnsavedChanges.value = true;
+}
 
 const formData = ref<Omit<Character, 'id' | 'createdAt' | 'updatedAt'> & { clothing?: string }>({
   name: props.character?.name ?? '',
@@ -248,44 +280,61 @@ const formData = ref<Omit<Character, 'id' | 'createdAt' | 'updatedAt'> & { cloth
   interests: props.character?.interests ?? '',
 });
 
-function onSave() {
+// 构建角色数据对象
+function buildCharacterData(): Character {
+  return {
+    id: props.character?.id ?? `char_${Date.now()}`,
+    ...formData.value,
+    projectId: props.character?.projectId,
+    createdAt: props.character?.createdAt ?? new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+// 离开输入框时自动保存（仅当有 onAutoSave 回调时）
+const debouncedAutoSave = useDebounceFn(() => {
+  if (!hasUnsavedChanges.value || !props.onAutoSave) return;
+  const characterData = buildCharacterData();
+  void props.onAutoSave(characterData);
+  hasUnsavedChanges.value = false;
+}, 300);
+
+// 输入框 blur 时触发自动保存
+function onFieldBlur() {
+  debouncedAutoSave();
+}
+
+function validateForm(): boolean {
   if (!formData.value.name.trim() || !formData.value.role) {
-    return;
+    return false;
   }
-
-  // 验证姓名长度
   if (formData.value.name.length < 1 || formData.value.name.length > 10) {
-    return;
+    return false;
   }
-
-  // 验证年龄
   if (formData.value.age && (Number(formData.value.age) < 1 || Number(formData.value.age) > 120)) {
-    return;
+    return false;
   }
-
-  // 验证身高
   if (
     formData.value.height &&
     (Number(formData.value.height) < 50 || Number(formData.value.height) > 250)
   ) {
-    return;
+    return false;
   }
-
-  // 验证体重
   if (
     formData.value.weight &&
     (Number(formData.value.weight) < 20 || Number(formData.value.weight) > 300)
   ) {
+    return false;
+  }
+  return true;
+}
+
+function onSave() {
+  if (!validateForm()) {
     return;
   }
 
-  const characterData: Character = {
-    id: props.character?.id ?? `char_${Date.now()}`,
-    ...formData.value,
-    createdAt: props.character?.createdAt ?? new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-
+  const characterData = buildCharacterData();
   onDialogOK(characterData);
 }
 </script>
